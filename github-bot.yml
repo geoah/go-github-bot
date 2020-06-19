@@ -1,0 +1,14 @@
+version: 1.0
+provider:
+  name: openfaas
+  gateway: xxx
+functions:
+  github-bot:
+    lang: golang-http
+    handler: ./github-bot
+    image: geoah/github-bot:latest
+    build_args:
+      GO111MODULE: on
+    environment:
+      DISCORD_TOKEN: xxx
+      DISCORD_CHANNEL_ID: xxx
