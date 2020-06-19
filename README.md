@@ -1,5 +1,8 @@
 # Github Bot
 
+This is a very simple Github bot that posts Pull Request and Issues to a Discord
+channel.
+
 ## Log
 
 ```sh
@@ -10,19 +13,24 @@ go mod init handler/function
 cd ..
 ```
 
-## Setup
-
-* Create app and bot
-* Invite to server, https://github.com/v0idp/Mellow#invite-bot
-
 ## Literature
 
 * OpenFAAS Go template, https://github.com/openfaas-incubator/golang-http-template
 * OpenFAAS YAML, https://docs.openfaas.com/reference/yaml/
 * DiscordGo package, https://github.com/bwmarrin/discordgo
+* Discord embed visualizer, https://leovoel.github.io/embed-visualizer/
 
-## Deployment
+## Setup
 
-```sh
-faas-cli up -f github-bot.yml
-```
+Assuming you have an open instance setup and configured:
+
+* Create a Discord app, https://discord.com/developers/applications
+* Create a Discord bot, and get its token
+* Invite the bot to your server, https://discordapi.com/permissions.html
+* Modify the `gateway` and `image` in the `stack.yaml`
+* Run `faas-cli up` to deploy the bot
+* Go to your Github repo settings, and add a new web hook that points to your function.
+  You need to add the following query params to your function URL:
+  * `discordBotToken` your bot token
+  * `discordChannelID` your discord channel id
+  ie. `https://foo/functions/github-bot?discordBotToken=foo&discordChannelID=bar`

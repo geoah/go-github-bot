@@ -3,7 +3,10 @@ package function
 import (
 	"encoding/json"
 	"fmt"
-	"os"
+	"io/ioutil"
+	"net/http"
+	"net/url"
+	"strings"
 
 	md "github.com/JohannesKaufmann/html-to-markdown"
 	"github.com/bwmarrin/discordgo"
@@ -13,8 +16,9 @@ import (
 )
 
 var (
-	ColorRed   = 0xd40b30
-	ColorGreen = 0x4fa96a
+	ColorRed    = 0xd40b30
+	ColorYellow = 0xd19d0c
+	ColorGreen  = 0x4fa96a
 )
 
 // Handle a function invocation
@@ -34,11 +38,18 @@ func Handle(req handler.Request) (handler.Response, error) {
 	logger.Info("got X-GitHub-Event header", zap.String("event", event))
 	gitHubEvent := github.Event(event)
 
-	// get the channel's ID
-	channelID := os.Getenv("DISCORD_CHANNEL_ID")
+	// parse query string
+	query, err := url.ParseQuery(req.QueryString)
+	if err != nil {
+		return httpError(400, err)
+	}
+
+	// get the bot and channel info
+	channelID := query.Get("discordChannelID")
+	botToken := query.Get("discordBotToken")
 
 	// create a new Discord session using the provided bot token
-	ds, err := discordgo.New("Bot " + os.Getenv("DISCORD_TOKEN"))
+	ds, err := discordgo.New("Bot " + botToken)
 	if err != nil {
 		return httpError(500, err)
 	}
@@ -51,6 +62,7 @@ func Handle(req handler.Request) (handler.Response, error) {
 
 	// figure out what to do based on the event
 	switch gitHubEvent {
+
 	case github.IssuesEvent:
 		payload := github.IssuesPayload{}
 		if err := json.Unmarshal([]byte(req.Body), &payload); err != nil {
@@ -58,48 +70,58 @@ func Handle(req handler.Request) (handler.Response, error) {
 		}
 
 		color := ColorGreen
-
-		if payload.Action == "edited" && payload.Issue.State == "closed" {
-			payload.Action = "closed"
+		switch payload.Action {
+		case "opened":
+		case "closed":
 			color = ColorRed
+		case "edited":
+			color = ColorYellow
+			if payload.Issue.State == "closed" {
+				payload.Action = "closed"
+				color = ColorRed
+			}
+		default:
+			return httpOk("Don't care about this action.")
 		}
+
+		header := fmt.Sprintf(
+			"Issue %s by %s",
+			payload.Action,
+			payload.Issue.User.Login,
+		)
 
 		embed := NewEmbed().
 			SetTitle(
-				"Issue %s by %s",
-				payload.Action,
-				payload.Issue.User.Login,
+				"#%d %s",
+				payload.Issue.Number,
+				payload.Issue.Title,
 			).
-			SetAuthor(
-				payload.Issue.User.Login,
-				payload.Issue.User.AvatarURL,
-				payload.Issue.User.URL,
+			SetURL(
+				payload.Issue.HTMLURL,
 			).
-			AddField("State", payload.Issue.State).
+			SetFooter(
+				payload.Issue.User.Login,
+				fmt.Sprintf(
+					"https://github.com/%s.png?size=40",
+					payload.Issue.User.Login,
+				),
+			).
 			SetColor(color)
-
-		if payload.Issue.Assignee != nil {
-			embed = embed.AddField(
-				"Assignee",
-				payload.Issue.Assignee.Login,
-			)
-		}
 
 		if payload.Action != "closed" {
 			embed = embed.SetDescription(
-				"__[%s](%s)__\n\n%s",
-				payload.Issue.Title,
-				payload.Issue.URL,
 				mdConvert(payload.Issue.Body),
 			)
 		}
 
-		embed = embed.InlineAllFields()
 		embed = embed.Truncate()
 
-		if _, err := ds.ChannelMessageSendEmbed(
+		if _, err := ds.ChannelMessageSendComplex(
 			channelID,
-			embed.MessageEmbed,
+			&discordgo.MessageSend{
+				Content: header,
+				Embed:   embed.MessageEmbed,
+			},
 		); err != nil {
 			return httpError(500, err)
 		}
@@ -110,50 +132,97 @@ func Handle(req handler.Request) (handler.Response, error) {
 			return httpError(500, err)
 		}
 
-		color := ColorGreen
+		header := fmt.Sprintf(
+			"Pull request %s by %s",
+			payload.Action,
+			payload.PullRequest.User.Login,
+		)
 
-		if payload.Action == "edited" && payload.PullRequest.State == "closed" {
-			payload.Action = "closed"
+		color := ColorGreen
+		switch payload.Action {
+		case "opened":
+		case "closed":
 			color = ColorRed
+		case "synchronize":
+			color = ColorYellow
+			header = fmt.Sprintf(
+				"Pull request updated by %s",
+				payload.PullRequest.User.Login,
+			)
+		case "edited":
+			color = ColorYellow
+			if payload.PullRequest.State == "closed" {
+				header = fmt.Sprintf(
+					"Pull request closed by %s",
+					payload.PullRequest.User.Login,
+				)
+				color = ColorRed
+			}
+		default:
+			return httpOk("Don't care about this action.")
 		}
 
 		embed := NewEmbed().
 			SetTitle(
-				"Pull request %s by %s",
-				payload.Action,
-				payload.PullRequest.User.Login,
+				"#%d %s",
+				payload.PullRequest.Number,
+				payload.PullRequest.Title,
 			).
-			SetAuthor(
-				payload.PullRequest.User.Login,
-				payload.PullRequest.User.AvatarURL,
-				payload.PullRequest.User.URL,
+			SetURL(
+				payload.PullRequest.HTMLURL,
 			).
-			AddField("State", payload.PullRequest.State).
+			SetFooter(
+				payload.PullRequest.User.Login,
+				fmt.Sprintf(
+					"https://github.com/%s.png?size=40",
+					payload.PullRequest.User.Login,
+				),
+			).
 			SetColor(color)
 
-		if payload.PullRequest.Assignee != nil {
-			embed = embed.AddField(
-				"Assignee",
-				payload.PullRequest.Assignee.Login,
-			)
-		}
-
-		if payload.Action != "closed" {
+		switch payload.Action {
+		case "opened", "edited":
 			embed = embed.SetDescription(
-				"__[%s](%s)__\n\n%s",
-				payload.PullRequest.Title,
-				payload.PullRequest.URL,
 				mdConvert(payload.PullRequest.Body),
 			)
+			fallthrough
+		case "synchronize":
+			if commits, err := fetchCommits(
+				payload.PullRequest.CommitsURL,
+			); err != nil {
+				logger.Error("error fetching commits", zap.Error(err))
+			} else {
+				body := ""
+				for _, commit := range commits {
+					body += fmt.Sprintf(
+						"• %s [[%s](%s)]\n",
+						commit.Commit.Message,
+						commit.Sha[:8],
+						commit.HTMLURL,
+					)
+				}
+				embed = embed.AddField(
+					"Commits",
+					body,
+				)
+			}
 		}
 
-		embed = embed.InlineAllFields()
 		embed = embed.Truncate()
 
-		if _, err := ds.ChannelMessageSendEmbed(
+		if _, err := ds.ChannelMessageSendComplex(
 			channelID,
-			embed.MessageEmbed,
+			&discordgo.MessageSend{
+				Content: header,
+				Embed:   embed.MessageEmbed,
+			},
 		); err != nil {
+			return httpError(500, err)
+		}
+
+	case github.PushEvent:
+		payload := github.PushPayload{}
+		if err := json.Unmarshal([]byte(req.Body), &payload); err != nil {
 			return httpError(500, err)
 		}
 
@@ -179,10 +248,32 @@ func httpError(code int, err error) (handler.Response, error) {
 }
 
 func mdConvert(body string) string {
-	converter := md.NewConverter("", true, nil)
-	markdown, err := converter.ConvertString(body)
-	if err != nil {
-		return body
+	if strings.Contains(body, "<li>") {
+		converter := md.NewConverter("", true, nil)
+		markdown, err := converter.ConvertString(body)
+		if err == nil {
+			body = markdown
+		}
 	}
-	return markdown
+	return body
+}
+
+func fetchCommits(url string) ([]GithubCommit, error) {
+	res, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+
+	defer res.Body.Close()
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	cs := []GithubCommit{}
+	if err := json.Unmarshal(body, &cs); err != nil {
+		return nil, err
+	}
+
+	return cs, nil
 }

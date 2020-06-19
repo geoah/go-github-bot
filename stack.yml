@@ -1,7 +1,7 @@
 version: 1.0
 provider:
   name: openfaas
-  gateway: xxx
+  gateway: https://openfaas.do.noodles.gr
 functions:
   github-bot:
     lang: golang-http
@@ -9,6 +9,3 @@ functions:
     image: geoah/github-bot:latest
     build_args:
       GO111MODULE: on
-    environment:
-      DISCORD_TOKEN: xxx
-      DISCORD_CHANNEL_ID: xxx
