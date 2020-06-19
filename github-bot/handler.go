@@ -16,9 +16,10 @@ import (
 )
 
 var (
-	ColorRed    = 0xd40b30
-	ColorYellow = 0xd19d0c
-	ColorGreen  = 0x4fa96a
+	ColorRed    = 0xd72b2b
+	ColorYellow = 0xf2c359
+	ColorBlue   = 0x5798d2
+	ColorGreen  = 0x31b967
 )
 
 // Handle a function invocation
@@ -132,17 +133,17 @@ func Handle(req handler.Request) (handler.Response, error) {
 			return httpError(500, err)
 		}
 
-		header := fmt.Sprintf(
-			"Pull request %s by %s",
-			payload.Action,
-			payload.PullRequest.User.Login,
-		)
+		header := ""
 
 		color := ColorGreen
 		switch payload.Action {
 		case "opened":
 		case "closed":
 			color = ColorRed
+			if payload.PullRequest.Merged {
+				payload.Action = "merged"
+				color = ColorBlue
+			}
 		case "synchronize":
 			color = ColorYellow
 			header = fmt.Sprintf(
@@ -160,6 +161,14 @@ func Handle(req handler.Request) (handler.Response, error) {
 			}
 		default:
 			return httpOk("Don't care about this action.")
+		}
+
+		if header == "" {
+			header = fmt.Sprintf(
+				"Pull request %s by %s",
+				payload.Action,
+				payload.PullRequest.User.Login,
+			)
 		}
 
 		embed := NewEmbed().
@@ -186,7 +195,7 @@ func Handle(req handler.Request) (handler.Response, error) {
 				mdConvert(payload.PullRequest.Body),
 			)
 			fallthrough
-		case "synchronize":
+		case "synchronize", "merged":
 			if commits, err := fetchCommits(
 				payload.PullRequest.CommitsURL,
 			); err != nil {
