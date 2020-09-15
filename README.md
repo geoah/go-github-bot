@@ -28,6 +28,7 @@ Assuming you have an open instance setup and configured:
 * Create a Discord bot, and get its token
 * Invite the bot to your server, https://discordapi.com/permissions.html
 * Modify the `gateway` and `image` in the `stack.yaml`
+* Note: Remember to set your `OPENFAAS_URL` env var.
 * Run `faas-cli up` to deploy the bot
 * Go to your Github repo settings, and add a new web hook that points to your function.
   You need to add the following query params to your function URL:

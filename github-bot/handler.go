@@ -10,7 +10,7 @@ import (
 
 	md "github.com/JohannesKaufmann/html-to-markdown"
 	"github.com/bwmarrin/discordgo"
-	handler "github.com/openfaas-incubator/go-function-sdk"
+	handler "github.com/openfaas/templates-sdk/go-http"
 	"go.uber.org/zap"
 	"gopkg.in/go-playground/webhooks.v5/github"
 )
@@ -56,10 +56,11 @@ func Handle(req handler.Request) (handler.Response, error) {
 	}
 	defer ds.Close()
 
+	// TODO this is supposed to only be needed the first time around?
 	// open a websocket connection to Discord and begin listening
-	if err := ds.Open(); err != nil {
-		return httpError(500, err)
-	}
+	// if err := ds.Open(); err != nil {
+	// 	return httpError(500, err)
+	// }
 
 	// figure out what to do based on the event
 	switch gitHubEvent {
